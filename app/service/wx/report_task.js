@@ -10,6 +10,17 @@ class WxReportTaskService extends Service {
         this.cacheJson = {};
         this.cacheIpJson = {};
         this.cacheArr = [];
+        // kafka 消费池限制
+        this.kafkalist = [];
+        this.kafkaConfig = this.app.config.kafka;
+        this.kafkatotal = 0;
+        if (this.kafkaConfig.consumer) {
+            this.kafkatotal = this.kafkaConfig.consumer.wx.total_limit || 0;
+        } else if (this.kafkaConfig.consumerGroup) {
+            this.kafkatotal = this.kafkaConfig.consumerGroup.wx.total_limit || 0;
+        }
+        // 缓存一次ip地址库信息
+        this.ipCityFileCache();
     }
 
     // 获得本地文件缓存
@@ -30,7 +41,6 @@ class WxReportTaskService extends Service {
 
     // 把redis消费数据经过加工之后同步到db3中 的定时任务（从redis中拉取数据）
     async saveWxReportDatasForRedis() {
-        await this.ipCityFileCache();
         // 线程遍历
         const totalcount = await this.app.redis.llen('wx_repore_datas');
         let onecount = this.app.config.redis_consumption.thread_wx;
@@ -83,6 +93,77 @@ class WxReportTaskService extends Service {
         if (type) this.app.redis.set('wx_task_begin_time', item.create_time);
     }
 
+    // kafka 消费信息
+    async saveWxReportDatasForKafka() {
+        if (this.kafkaConfig.consumer) {
+            this.app.kafka.consumer('wx', message => {
+                this.consumerDatas(message);
+            });
+        } else if (this.kafkaConfig.consumerGroup) {
+            this.app.kafka.consumerGroup('wx', message => {
+                this.consumerDatas(message);
+            });
+        }
+    }
+
+    async consumerDatas(message) {
+        try {
+            if (!message.value) return;
+            const json = {};
+            const query = JSON.parse(message.value);
+            if (json.time) return;
+            json.time = query.time;
+
+            this.getWxItemDataForKafka(query);
+
+        } catch (err) { console.log(err); }
+    }
+
+    // 单个item储存数据
+    async getWxItemDataForKafka(query) {
+        const item = {
+            app_id: query.appId,
+            create_time: new Date(query.time),
+            errs: query.errs,
+            ip: query.ip,
+            mark_page: this.app.randomString(),
+            mark_user: query.markuser,
+            mark_uv: query.markuv,
+            net: query.net,
+            system: query.system,
+            loc: query.loc,
+            userInfo: query.userInfo,
+            pages: query.pages,
+            ajaxs: query.ajaxs,
+        };
+
+        let system = {};
+        // 做一次appId缓存
+        if (this.cacheJson[item.app_id]) {
+            system = this.cacheJson[item.app_id];
+        } else {
+            system = await this.service.system.getSystemForAppId(item.app_id);
+            this.cacheJson[item.app_id] = system;
+        }
+
+        if (system.is_use !== 0) return;
+
+        // kafka 连接池限制
+        const msgtab = query.time + query.ip;
+        if (this.kafkatotal && this.kafkalist.length >= this.kafkatotal) return;
+        this.kafkalist.push(msgtab);
+
+        if (system.is_statisi_system === 0) {
+            this.savePages(item, () => {
+                // 释放
+                const index = this.kafkalist.indexOf(msgtab);
+                if (index > -1) this.kafkalist.splice(index, 1);
+            });
+        }
+        if (system.is_statisi_ajax === 0) this.saveAjaxs(item, system);
+        if (system.is_statisi_error === 0) this.saveErrors(item);
+    }
+
     // 把db2的数据经过加工之后同步到db3中 的定时任务
     async saveWxReportDatasForMongodb() {
         let beginTime = await this.app.redis.get('wx_task_begin_time');
@@ -119,8 +200,6 @@ class WxReportTaskService extends Service {
         this.cacheJson = {};
         this.cacheArr = [];
         if (datas && datas.length) {
-            await this.ipCityFileCache();
-
             const length = datas.length;
             const number = Math.ceil(length / this.app.config.report_thread);
 
@@ -159,55 +238,63 @@ class WxReportTaskService extends Service {
     }
 
     // 储存网页性能数据
-    async savePages(item) {
+    async savePages(item, fn) {
         const ip = item.ip;
-        if (!ip) return;
-        let copyip = ip.split('.');
-        copyip = `${copyip[0]}.${copyip[1]}.${copyip[2]}`;
-        let datas = null;
-        if (this.cacheIpJson[copyip]) {
-            datas = this.cacheIpJson[copyip];
-        } else if (this.app.config.ip_redis_or_mongodb === 'redis') {
-            // 通过reids获得用户IP对应的地理位置信息
-            datas = await this.app.redis.get(copyip);
-            if (datas) {
-                datas = JSON.parse(datas);
-                this.cacheIpJson[copyip] = datas;
-                this.saveIpDatasInFile(copyip, { city: datas.city, province: datas.province });
-            }
-        } else if (this.app.config.ip_redis_or_mongodb === 'mongodb') {
-            // 通过mongodb获得用户IP对应的地理位置信息
-            datas = await this.ctx.model.IpLibrary.findOne({ ip: copyip }).read('sp').exec();
-            if (datas) {
-                this.cacheIpJson[copyip] = datas;
-                this.saveIpDatasInFile(copyip, { city: datas.city, province: datas.province });
-            }
+        if (!ip) {
+            fn && fn();
+            return;
         }
+        try {
+            let copyip = ip.split('.');
+            copyip = `${copyip[0]}.${copyip[1]}.${copyip[2]}`;
+            let datas = null;
+            if (this.cacheIpJson[copyip]) {
+                datas = this.cacheIpJson[copyip];
+            } else if (this.app.config.ip_redis_or_mongodb === 'redis') {
+                // 通过reids获得用户IP对应的地理位置信息
+                datas = await this.app.redis.get(copyip);
+                if (datas) {
+                    datas = JSON.parse(datas);
+                    this.cacheIpJson[copyip] = datas;
+                    this.saveIpDatasInFile(copyip, { city: datas.city, province: datas.province });
+                }
+            } else if (this.app.config.ip_redis_or_mongodb === 'mongodb') {
+                // 通过mongodb获得用户IP对应的地理位置信息
+                datas = await this.ctx.model.IpLibrary.findOne({ ip: copyip }).read('sp').exec();
+                if (datas) {
+                    this.cacheIpJson[copyip] = datas;
+                    this.saveIpDatasInFile(copyip, { city: datas.city, province: datas.province });
+                }
+            }
+            const pages = this.app.models.WxPages(item.app_id)();
+            pages.app_id = item.app_id;
+            pages.create_time = item.create_time;
+            pages.path = item.pages.router;
+            pages.options = item.pages.options;
+            pages.mark_page = item.mark_page;
+            pages.mark_user = item.mark_user;
+            pages.mark_uv = item.mark_uv;
+            pages.net = item.net;
+            pages.ip = item.ip;
+            pages.brand = item.system.brand;
+            pages.model = item.system.model;
+            pages.screenWidth = item.system.screenWidth;
+            pages.screenHeight = item.system.screenHeight;
+            pages.language = item.system.language;
+            pages.version = item.system.version;
+            pages.system = item.system.system;
+            pages.platform = item.system.platform;
+            pages.SDKVersion = item.system.SDKVersion;
+            if (datas) {
+                pages.province = datas.province;
+                pages.city = datas.city;
+            }
+            await pages.save();
 
-        const pages = this.app.models.WxPages(item.app_id)();
-        pages.app_id = item.app_id;
-        pages.create_time = item.create_time;
-        pages.path = item.pages.router;
-        pages.options = item.pages.options;
-        pages.mark_page = item.mark_page;
-        pages.mark_user = item.mark_user;
-        pages.mark_uv = item.mark_uv;
-        pages.net = item.net;
-        pages.ip = item.ip;
-        pages.brand = item.system.brand;
-        pages.model = item.system.model;
-        pages.screenWidth = item.system.screenWidth;
-        pages.screenHeight = item.system.screenHeight;
-        pages.language = item.system.language;
-        pages.version = item.system.version;
-        pages.system = item.system.system;
-        pages.platform = item.system.platform;
-        pages.SDKVersion = item.system.SDKVersion;
-        if (datas) {
-            pages.province = datas.province;
-            pages.city = datas.city;
+            fn && fn();
+        } catch (err) {
+            fn && fn();
         }
-        pages.save();
     }
 
     // 存储ajax信息

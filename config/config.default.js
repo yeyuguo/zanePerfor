@@ -39,9 +39,6 @@ module.exports = () => {
     // wx浏览器端定时任务是否执行
     config.is_wx_task_run = true;
 
-    // db1与db3数据库同步每分钟执行一次
-    config.report_task_time = '0 */1 * * * *';
-
     // 执行pvuvip定时任务的时间间隔 每分钟定时执行一次
     config.pvuvip_task_minute_time = '0 */1 * * * *';
 
@@ -51,13 +48,10 @@ module.exports = () => {
     // 执行ip地理位置转换的定时任务 每分钟定时执行一次
     config.ip_task_time = '0 */1 * * * *';
 
-    // db3同步db1上报数据线程数
-    config.report_thread = 10;
-
     // 更新用户上报IP对应的城市信息线程数
     config.ip_thread = 5;
 
-    // 上报原始数据使用redis存储还是使用mongodb存储
+    // 上报原始数据使用redis存储、kafka储存、还是使用mongodb存储
     config.report_data_type = 'kafka'; // redus  mongodb  kafka
 
     // 使用redis储存原始数据时，相关配置 （report_data_type=redus生效）
@@ -90,19 +84,43 @@ module.exports = () => {
                 topic: 'zane_perfor_wx',
             },
         },
+        // consumer 和 consumerGroup消费任选其一即可
+        // 优先选择consumer消费，两种消费配置任留一种即可
         consumer: {
             web: {
                 topic: 'zane_perfor_web',
-                isone: false, // 此参数默认不可更改
                 offset: 0, // default 0
                 partition: 0, // default 0
+                isone: false, // 此参数默认不可更改
+                total_limit: 10000, // 消息队列消费池限制数, 0：不限制 number: 限制条数 高并发时服务优雅降级方案
             },
             wx: {
                 topic: 'zane_perfor_wx',
-                isone: false, // 此参数默认不可更改
+                isone: false,
+                total_limit: 10000,
+            },
+        },
+        consumerGroup: {
+            web: { // ConsumerGroup(options, topics)
+                topic: 'zane_perfor_web',
+                groupId: 'WebPerformanceGroup',
+                commitOffsetsOnFirstJoin: true,
+                total_limit: 10000,
+            },
+            wx: {
+                topic: 'zane_perfor_wx',
+                groupId: 'WxPerformanceGroup',
+                commitOffsetsOnFirstJoin: true,
+                total_limit: 10000,
             },
         },
     };
+
+    // report_data_type=mongodb生效
+    // db1与db3数据库同步每分钟执行一次
+    config.report_task_time = '0 */1 * * * *';
+    // db3同步db1上报数据线程数
+    config.report_thread = 10;
 
     // 解析用户ip地址为城市是使用redis还是使用mongodb
     config.ip_redis_or_mongodb = 'redis'; // redus  mongodb
@@ -198,7 +216,7 @@ module.exports = () => {
     const dbclients = {
         db3: {
             // 单机部署
-            url: 'mongodb://127.0.0.1:27019/performance',
+            url: 'mongodb://127.0.0.1:27017/performance',
             // 副本集 读写分离
             // url: 'mongodb://127.0.0.1:28100,127.0.0.1:28101,127.0.0.1:28102/performance?replicaSet=rs1',
             // 集群分片
@@ -211,7 +229,7 @@ module.exports = () => {
     };
     if (config.report_data_type === 'mongodb') {
         dbclients.db1 = {
-            url: 'mongodb://127.0.0.1:27017/performance',
+            url: 'mongodb://127.0.0.1:27019/performance',
             options: {
                 poolSize: 20,
             },

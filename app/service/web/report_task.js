@@ -14,7 +14,17 @@ class DataTimedTaskService extends Service {
         this.cacheIpJson = {};
         this.cacheArr = [];
         this.system = {};
-        this.kafkaConsumerList = [];
+        // kafka 消费池限制
+        this.kafkalist = [];
+        this.kafkaConfig = this.app.config.kafka;
+        this.kafkatotal = 0;
+        if (this.kafkaConfig.consumer) {
+            this.kafkatotal = this.kafkaConfig.consumer.web.total_limit || 0;
+        } else if (this.kafkaConfig.consumerGroup) {
+            this.kafkatotal = this.kafkaConfig.consumerGroup.web.total_limit || 0;
+        }
+        // 缓存一次ip地址库信息
+        this.ipCityFileCache();
     }
 
     // 获得本地文件缓存
@@ -35,7 +45,6 @@ class DataTimedTaskService extends Service {
 
     // 把redis消费数据经过加工之后同步到db3中 的定时任务（从redis中拉取数据）
     async saveWebReportDatasForRedis() {
-        await this.ipCityFileCache();
         // 线程遍历
         const totalcount = await this.app.redis.llen('web_repore_datas');
         let onecount = this.app.config.redis_consumption.thread_web;
@@ -90,12 +99,76 @@ class DataTimedTaskService extends Service {
 
     // kafka 消费信息
     async saveWebReportDatasForKafka() {
-        this.app.kafka.consumer('web', message => {
-            try {
-                console.log(this.kafkaConsumerList.length);
-                if (message.value) this.kafkaConsumerList.push(JSON.parse(message.value));
-            } catch (err) { console.log(err); }
-        });
+        if (this.kafkaConfig.consumer) {
+            this.app.kafka.consumer('web', message => {
+                this.consumerDatas(message);
+            });
+        } else if (this.kafkaConfig.consumerGroup) {
+            this.app.kafka.consumerGroup('web', message => {
+                this.consumerDatas(message);
+            });
+        }
+    }
+
+    async consumerDatas(message) {
+        try {
+            if (!message.value) return;
+            const json = {};
+            const query = JSON.parse(message.value);
+            if (json.time) return;
+            json.time = query.time;
+
+            this.getWebItemDataForKafka(query);
+
+        } catch (err) {
+            this.app.coreLogger.error(`kafka 消息队列消费消息 error ${err}`);
+            console.log(err);
+        }
+    }
+
+    // 单个item储存数据
+    async getWebItemDataForKafka(query) {
+        const item = {
+            app_id: query.appId,
+            create_time: new Date(query.time),
+            user_agent: query.user_agent,
+            ip: query.ip,
+            mark_page: this.app.randomString(),
+            mark_user: query.markUser,
+            mark_uv: query.markUv,
+            url: query.url,
+            pre_url: query.preUrl,
+            performance: query.performance,
+            error_list: query.errorList,
+            resource_list: query.resourceList,
+            screenwidth: query.screenwidth,
+            screenheight: query.screenheight,
+        };
+        let system = {};
+        // 做一次appId缓存
+        if (this.cacheJson[item.app_id]) {
+            system = this.cacheJson[item.app_id];
+        } else {
+            system = await this.service.system.getSystemForAppId(item.app_id);
+            this.cacheJson[item.app_id] = system;
+        }
+        if (system.is_use !== 0) return;
+
+        // kafka 连接池限制
+        const msgtab = query.time + query.ip;
+        if (this.kafkatotal && this.kafkalist.length >= this.kafkatotal) return;
+        this.kafkalist.push(msgtab);
+
+        if (system.is_statisi_pages === 0) {
+            this.savePages(item, system.slow_page_time, () => {
+                // 释放
+                const index = this.kafkalist.indexOf(msgtab);
+                if (index > -1) this.kafkalist.splice(index, 1);
+            });
+        }
+        if (system.is_statisi_resource === 0 || system.is_statisi_ajax === 0) this.forEachResources(item, system);
+        if (system.is_statisi_error === 0) this.saveErrors(item);
+        if (system.is_statisi_system === 0) this.saveEnvironment(item);
     }
 
     // 把db2的数据经过加工之后同步到db3中 的定时任务（从mongodb中拉取数据）
@@ -131,8 +204,6 @@ class DataTimedTaskService extends Service {
         this.cacheJson = {};
         this.cacheArr = [];
         if (datas && datas.length) {
-            await this.ipCityFileCache();
-
             const length = datas.length;
             const number = Math.ceil(length / this.app.config.report_thread);
 
@@ -172,40 +243,46 @@ class DataTimedTaskService extends Service {
     }
 
     // 储存网页性能数据
-    savePages(item, slowPageTime = 5) {
-        const pages = this.app.models.WebPages(item.app_id)();
+    async savePages(item, slowPageTime = 5, fn) {
+        try {
+            const pages = this.app.models.WebPages(item.app_id)();
+            const performance = item.performance;
+            if (item.performance && item.performance.lodt > 0) {
+                const newurl = url.parse(item.url);
+                const newName = newurl.protocol + '//' + newurl.host + newurl.pathname;
 
-        const performance = item.performance;
-        if (item.performance && item.performance.lodt > 0) {
-            const newurl = url.parse(item.url);
-            const newName = newurl.protocol + '//' + newurl.host + newurl.pathname;
+                slowPageTime = slowPageTime * 1000;
+                const speedType = performance.lodt >= slowPageTime ? 2 : 1;
 
-            slowPageTime = slowPageTime * 1000;
-            const speedType = performance.lodt >= slowPageTime ? 2 : 1;
+                pages.app_id = item.app_id;
+                pages.create_time = item.create_time;
+                pages.url = newName;
+                pages.full_url = item.url;
+                pages.pre_url = item.pre_url;
+                pages.speed_type = speedType;
+                pages.mark_page = item.mark_page;
+                pages.mark_user = item.mark_user;
+                pages.load_time = performance.lodt;
+                pages.dns_time = performance.dnst;
+                pages.tcp_time = performance.tcpt;
+                pages.dom_time = performance.domt;
+                pages.resource_list = item.resource_list;
+                pages.white_time = performance.wit;
+                pages.redirect_time = performance.rdit;
+                pages.unload_time = performance.uodt;
+                pages.request_time = performance.reqt;
+                pages.analysisDom_time = performance.andt;
+                pages.ready_time = performance.radt;
+                pages.screenwidth = item.screenwidth;
+                pages.screenheight = item.screenheight;
+                await pages.save();
 
-            pages.app_id = item.app_id;
-            pages.create_time = item.create_time;
-            pages.url = newName;
-            pages.full_url = item.url;
-            pages.pre_url = item.pre_url;
-            pages.speed_type = speedType;
-            pages.mark_page = item.mark_page;
-            pages.mark_user = item.mark_user;
-            pages.load_time = performance.lodt;
-            pages.dns_time = performance.dnst;
-            pages.tcp_time = performance.tcpt;
-            pages.dom_time = performance.domt;
-            pages.resource_list = item.resource_list;
-            pages.white_time = performance.wit;
-            pages.redirect_time = performance.rdit;
-            pages.unload_time = performance.uodt;
-            pages.request_time = performance.reqt;
-            pages.analysisDom_time = performance.andt;
-            pages.ready_time = performance.radt;
-            pages.screenwidth = item.screenwidth;
-            pages.screenheight = item.screenheight;
-
-            pages.save();
+                fn && fn();
+            } else {
+                fn && fn();
+            }
+        } catch (err) {
+            fn && fn();
         }
     }
 
