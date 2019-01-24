@@ -23,7 +23,7 @@ services:
   #     dockerfile: Dockerfile
   #   ports:
   #     - "7002:7002"
-  #   image: self/monitor:v1
+  #   image: self/monitor
   
 # services:
 #   mongodb:

@@ -29,6 +29,21 @@ docker run -it -d --name test_redis -p 6377:6379 redis:3.2
 ```
 
 
+#### redis web界面
+端口8888
+```sh
+docker rm -f redis_web \
+&& docker run --rm -it -d \
+    -e REDIS_1_HOST=redis \
+    -e REDIS_1_NAME=MyRedis \
+    -p 8888:80 \
+    --name redis_web \
+    --link test_redis:redis  \
+    erikdubbelboer/phpredisadmin
+```
+
+访问浏览器 `http://localhost:8888` 
+
 
 ## 启动 kafka zookeeper
 [安装 kafka 和 zookeeper 的详细链接](https://hub.docker.com/r/wurstmeister/kafka)
@@ -46,9 +61,30 @@ docker run -it -d --name test_zookeeper -p 2180:2180 wurstmeister/zookeeper
 端口 9090
 真实 9092
 ```sh
-docker run -it -d --name test_kafka -p 9090:9092 wurstmeister/kafka:2.12-2.0.1 -e 
+docker rm -f test_kafka \
+&& docker run -it -d \
+-p 9090:9092 \
+--name test_kafka \
+-e KAFKA_ADVERTISED_HOST_NAME=10.9.163.153 \
+-e KAFKA_ZOOKEEPER_CONNECT=10.9.163.153:2180 \
+wurstmeister/kafka:2.12-2.0.1  
 ```
 
+
+
+
+
+## 测试编排 web-monitor界面
+
+docker rm -f test_monitor \
+&& docker run \
+    -it \
+    --name test_monitor \
+    -p 7003:7001 \
+    -e kafka_NAME=127.0.0.1:9090 --link test_kafka:kafka \
+    -e mongo_host=127.0.0.1:27019 \
+    -e redis_NAME=127.0.0.1:6377 --link test_redis:redis \
+    self/monitor
 
 
 
