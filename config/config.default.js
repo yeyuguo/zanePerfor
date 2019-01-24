@@ -3,6 +3,7 @@ const path = require('path');
 const address = require('address');
 
 module.exports = () => {
+
     const config = exports = {};
 
     config.keys = '_123456789';
@@ -18,17 +19,17 @@ module.exports = () => {
     // 务必修改config.debug = true;
     config.session_secret = 'node_performance_secret';
 
-    // 用于安全校验和回调域名根路径 开发路径域名（必填）
-    config.origin = 'http://127.0.0.1:7001';
-
     // 集群配置（一般默认即可）
     config.cluster = {
         listen: {
-            port: 7001,
+            port: 7004,
             hostname: '127.0.0.1',
             ip: address.ip(),
         },
     };
+
+    // 用于安全校验和回调域名根路径 开发路径域名（必填）
+    config.origin = `http://127.0.0.1:${config.cluster.listen.port}`;
 
     // 用户登录态持续时间 1 天
     config.user_login_timeout = 86400;
