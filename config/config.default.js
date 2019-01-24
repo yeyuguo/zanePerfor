@@ -7,7 +7,7 @@ module.exports = () => {
 
     config.keys = '_123456789';
 
-    config.middleware = [ ];
+    config.middleware = [];
 
     config.name = '性能监控系统';
 
@@ -77,7 +77,7 @@ module.exports = () => {
     // 配置参考 https://www.npmjs.com/package/kafka-node
     config.kafka = {
         client: { // kafkaClient
-            kafkaHost: 'localhost:9092',
+            kafkaHost: 'localhost:9090',
         },
         producer: {
             web: {
@@ -123,9 +123,9 @@ module.exports = () => {
     // shell重启
     config.shell_restart = {
         // mongodb重启shell,如果mongodb进程kill了，请求不了数据库时重启（可选填）
-        mongodb: [ path.resolve(__dirname, '../mongodb-restart.sh') ],
+        mongodb: [path.resolve(__dirname, '../mongodb-restart.sh')],
         // node.js服务重启shell,mongodb重启时，数据库连接池有可能会断，这时需要重启服务
-        servers: [ path.resolve(__dirname, '../servers-restart.sh') ],
+        servers: [path.resolve(__dirname, '../servers-restart.sh')],
     };
 
     // 百度地图api key
@@ -138,14 +138,14 @@ module.exports = () => {
     config.github = {
         client_id: 'xxxxxx',
         client_secret: 'xxxxxx',
-        scope: [ 'user' ],
+        scope: ['user'],
     };
 
     // 新浪微博 login
     config.weibo = {
         client_id: 'xxxxxx', // 微博的App Key
         client_secret: 'xxxxxx', // 微博的App Secret
-        scope: [ 'all' ],
+        scope: ['all'],
     };
 
     // wechat login
@@ -187,7 +187,7 @@ module.exports = () => {
     // redis配置
     config.redis = {
         client: {
-            port: 6379, // Redis port
+            port: 6377, // Redis port
             host: '127.0.0.1', // Redis host
             password: '',
             db: 0,
@@ -229,7 +229,7 @@ module.exports = () => {
     };
 
     config.security = {
-        domainWhiteList: [ 'http://127.0.0.1:18090' ],
+        domainWhiteList: ['http://127.0.0.1:18090'],
         csrf: {
             enable: false,
             ignore: '/api/v1/report/**',
