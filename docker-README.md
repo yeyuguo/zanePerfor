@@ -16,7 +16,12 @@ docker build -t 镜像名 -f /绝对路径/Dockerfile ./
 端口 27019
 真实 27017
 ```sh
-docker run -it -d -p 27019:27017 --name test_mongo mongo:3.4
+docker rm -f test_mongo;\
+docker run -it -d  \
+    -p 27019:27017 \
+    --name test_mongo \
+    --network mynetwork \
+    mongo:3.4 
 ```
 
 
@@ -32,8 +37,8 @@ docker run -it -d --name test_redis -p 6377:6379 redis:3.2
 #### redis web界面
 端口8888
 ```sh
-docker rm -f redis_web \
-&& docker run --rm -it -d \
+docker rm -f redis_web; \
+docker run --rm -it -d \
     -e REDIS_1_HOST=redis \
     -e REDIS_1_NAME=MyRedis \
     -p 8888:80 \
@@ -51,9 +56,15 @@ docker rm -f redis_web \
 [kafka启动的环境变量设置（KAFKA_ZOOKEEPER_CONNECT）](https://www.jianshu.com/p/93f33dfefdb2)
 ### zookeeper
 端口 2180
-真实 2180
+真实 2181
 ```sh
-docker run -it -d --name test_zookeeper -p 2180:2180 wurstmeister/zookeeper 
+
+docker rm -f test_zookeeper;\
+docker run -it -d \
+    --name test_zookeeper \
+    --network mynetwork \
+    -p 2180:2181 \
+    wurstmeister/zookeeper
 ```
 
 
@@ -61,13 +72,15 @@ docker run -it -d --name test_zookeeper -p 2180:2180 wurstmeister/zookeeper
 端口 9090
 真实 9092
 ```sh
-docker rm -f test_kafka \
-&& docker run -it -d \
+docker rm -f test_kafka; \
+docker run -it -d \
 -p 9090:9092 \
+--network mynetwork \
 --name test_kafka \
--e KAFKA_ADVERTISED_HOST_NAME=10.9.163.153 \
--e KAFKA_ZOOKEEPER_CONNECT=10.9.163.153:2180 \
+-e KAFKA_ADVERTISED_HOST_NAME=10.9.163.172 \
+-e KAFKA_ZOOKEEPER_CONNECT=10.9.163.172:2180 \
 wurstmeister/kafka:2.12-2.0.1  
+# --link zaneperfor_zookeeper_1:zookeeper \
 ```
 
 
@@ -88,12 +101,15 @@ docker rm -f test_monitor \
 
 
 
-docker rm -f test_monitor \
-&& docker run \
+docker rm -f test; \
+docker run \
     -it \
     -d \
-    --name test_monitor \
     -p 7003:7001 \
-    -v  /Users/yeyuguo/Code/zanePerfor:/web-ui\
+    -p 27077:27017 \
+    -v  /Users/yeyuguo/Code/zanePerfor:/web-ui \
+    --name test \
+    --network mynetwork \
     node:latest
 
+    --link test_mongo:mongo \ 

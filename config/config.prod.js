@@ -13,14 +13,14 @@ module.exports = () => {
     config.github = {
         client_id: 'xxxxxx',
         client_secret: 'xxxxxx',
-        scope: [ 'user' ],
+        scope: ['user'],
     };
 
     // 新浪微博 login
     config.weibo = {
         client_id: 'xxxxxx', // 微博的App Key
         client_secret: 'xxxxxx', // 微博的App Secret
-        scope: [ 'all' ],
+        scope: ['all'],
     };
 
     // wechat login
@@ -32,9 +32,9 @@ module.exports = () => {
     // redis配置
     config.redis = {
         client: {
-            port: 6379, // Redis port
-            host: 'xx.xx.xx.xx', // Redis host
-            password: 'xxxxxx',
+            port: 6377, // Redis port
+            host: '127.0.0.1', // Redis host
+            password: '',
             db: 0,
         },
     };
@@ -79,7 +79,7 @@ module.exports = () => {
     };
 
     config.security = {
-        domainWhiteList: [ 'https://xxx.xx.com' ],
+        domainWhiteList: ['https://xxx.xx.com'],
         csrf: {
             enable: false,
             ignore: '/api/v1/report/**',

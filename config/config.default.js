@@ -4,8 +4,6 @@ const address = require('address');
 
 module.exports = () => {
 
-    const env = process.env;
-
     const config = exports = {};
 
     config.keys = '_123456789';
@@ -24,7 +22,7 @@ module.exports = () => {
     // 集群配置（一般默认即可）
     config.cluster = {
         listen: {
-            port: 7004,
+            port: 7003,
             hostname: '127.0.0.1',
             ip: address.ip(),
         },
@@ -74,7 +72,7 @@ module.exports = () => {
     // 配置参考 https://www.npmjs.com/package/kafka-node
     config.kafka = {
         client: { // kafkaClient
-            kafkaHost: 'localhost:9092',
+            kafkaHost: 'localhost:9090',
         },
         producer: {
             web: {
@@ -215,11 +213,13 @@ module.exports = () => {
         },
     };
 
+
+    console.log('process.env.test_mongo: ', process.env.test_mongo);
     // mongodb 服务
     const dbclients = {
         db3: {
             // 单机部署
-            url: `mongodb://${env.mongo_host || '127.0.0.1:27017'}/performance`,
+            url: 'mongodb://127.0.0.1:27017/performance',
             // 副本集 读写分离
             // url: 'mongodb://127.0.0.1:28100,127.0.0.1:28101,127.0.0.1:28102/performance?replicaSet=rs1',
             // 集群分片
@@ -232,47 +232,48 @@ module.exports = () => {
     };
     if (config.report_data_type === 'mongodb') {
         dbclients.db1 = {
-            url: `mongodb://${env.mongo_host || '127.0.0.1:27019'}/performance`,
-            poolSize: 20,
-        },
+            url: 'mongodb://127.0.0.1:27019/performance',
+            options: {
+                poolSize: 20,
+            },
         };
-}
+    }
 
-// mongoose配置
-config.mongoose = {
-    clients: dbclients,
-};
+    // mongoose配置
+    config.mongoose = {
+        clients: dbclients,
+    };
 
-config.bodyParser = {
-    jsonLimit: '1mb',
-    formLimit: '1mb',
-};
+    config.bodyParser = {
+        jsonLimit: '1mb',
+        formLimit: '1mb',
+    };
 
-config.security = {
-    domainWhiteList: ['http://127.0.0.1:18090'],
-    csrf: {
-        enable: false,
-        ignore: '/api/v1/report/**',
-    },
-};
+    config.security = {
+        domainWhiteList: ['http://127.0.0.1:18090'],
+        csrf: {
+            enable: false,
+            ignore: '/api/v1/report/**',
+        },
+    };
 
-config.cors = {
-    origin: '*',
-    allowMethods: 'GET,PUT,POST,DELETE',
-};
+    config.cors = {
+        origin: '*',
+        allowMethods: 'GET,PUT,POST,DELETE',
+    };
 
-config.onerror = {
-    all(err, ctx) {
-        // 统一错误处理
-        ctx.body = JSON.stringify({
-            code: 1001,
-            desc: err.toString().replace('Error: ', ''),
-        });
-        ctx.status = 200;
-        // 统一错误日志记录
-        ctx.logger.info(`统一错误日志：发现了错误${err}`);
-    },
-};
+    config.onerror = {
+        all(err, ctx) {
+            // 统一错误处理
+            ctx.body = JSON.stringify({
+                code: 1001,
+                desc: err.toString().replace('Error: ', ''),
+            });
+            ctx.status = 200;
+            // 统一错误日志记录
+            ctx.logger.info(`统一错误日志：发现了错误${err}`);
+        },
+    };
 
-return config;
+    return config;
 };

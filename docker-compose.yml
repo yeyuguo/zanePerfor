@@ -1,5 +1,13 @@
 version: "0.1" 
 services:
+  redis: 
+    image: redis:3.2
+    ports: 
+      - "6377:6379"
+  mongo:
+    image: mongo:3.4
+    ports: 
+      - "27019:27017"
   # 源 https://raw.githubusercontent.com/wurstmeister/kafka-docker/master/docker-compose.yml
   zookeeper:
     image: wurstmeister/zookeeper
@@ -11,11 +19,12 @@ services:
       - "9090:9092"
     environment:
       # your docker host IP (Note: Do not use localhost or 127.0.0.1 as the host ip if you want to run multiple brokers.)
-      KAFKA_ADVERTISED_HOST_NAME: 10.9.163.153
+      KAFKA_ADVERTISED_HOST_NAME: ${hostip}
       # KAFKA_ZOOKEEPER_CONNECT: zookeeper:2180
-      KAFKA_ZOOKEEPER_CONNECT: 10.9.163.153:2180
-    # volumes:
-    #   - /var/run/docker.sock:/var/run/docker.sock
+      KAFKA_ZOOKEEPER_CONNECT: ${hostip}:2180
+  
+      
+
       # todo 待测试 web 进入
   # web: #
   #   build:
@@ -24,33 +33,3 @@ services:
   #   ports:
   #     - "7002:7002"
   #   image: self/monitor
-  
-# services:
-#   mongodb:
-#     image: mongo:3.4
-#     volumes:
-#       - type: bind
-#         source: ./data/db # 数据库文件存放地址，根据需要修改为本地地址
-#         target: /data/db
-#   redis:
-#     image: redis:4.0.6
-#     command: redis-server --appendonly yes
-#     volumes:
-#       - type: bind
-#         source: ./data/redis # redis 数据文件存放地址，根据需要修改为本地地址
-#         target: /data
-#   web:
-#     image: easymock/easymock:1.6.0
-#     command: /bin/bash -c "npm start"
-#     links:
-#       - mongodb:mongodb
-#       - redis:redis
-#     ports:
-#       - 7300:7300
-#     volumes:
-#       - type: bind 
-#         source: ./logs # 日志地址，根据需要修改为本地地址
-#         target: /home/easy-mock/easy-mock/logs
-#       - type: bind
-#         source: ./production.json # 配置地址，请使用本地配置地址替换
-#         target: /home/easy-mock/easy-mock/config/production.json
