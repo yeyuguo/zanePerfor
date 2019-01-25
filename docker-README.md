@@ -82,13 +82,18 @@ docker rm -f test_monitor \
     --name test_monitor \
     -p 7003:7001 \
     -e kafka_NAME=127.0.0.1:9090 --link test_kafka:kafka \
-    -e mongo_host=127.0.0.1:27019 \
+    --link test_mongo:mongo
     -e redis_NAME=127.0.0.1:6377 --link test_redis:redis \
     self/monitor
 
 
 
-
-
-
+docker rm -f test_monitor \
+&& docker run \
+    -it \
+    -d \
+    --name test_monitor \
+    -p 7003:7001 \
+    -v  /Users/yeyuguo/Code/zanePerfor:/web-ui\
+    node:latest
 
